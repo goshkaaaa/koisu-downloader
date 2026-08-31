@@ -25,9 +25,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN npm run build
 
-EXPOSE 3000
+EXPOSE 10000
 
-ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["npm", "run", "start"]
+CMD ["sh", "-c", "npx next start -H 0.0.0.0 -p ${PORT:-10000}"]
