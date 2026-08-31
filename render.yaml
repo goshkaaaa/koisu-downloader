@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: koisu-studio
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    healthCheckPath: /api/cookies
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production

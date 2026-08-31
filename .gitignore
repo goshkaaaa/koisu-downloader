@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Local downloads and temporary files
+downloads/
+*.part
+*.ytdl
+*.temp
+
+# Local FFmpeg binaries (large files, auto-downloaded on server)
+bin/*.exe
+bin/
+
+# Environment and logs
+.env
+.env*.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cookies file with sensitive session data
+cookies.txt
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+*.png
