@@ -156,7 +156,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
     <div className="panel mx-auto mt-8 w-full max-w-4xl rounded-xl p-5 md:p-6">
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-12">
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black md:col-span-5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {}
           <img
             src={info.thumbnail}
             alt={info.title}

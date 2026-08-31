@@ -85,7 +85,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="relative h-12 w-16 flex-shrink-0 overflow-hidden rounded-md bg-black">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {}
                     <img
                       src={item.thumbnail}
                       alt={item.title}

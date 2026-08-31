@@ -38,23 +38,19 @@ TIKTOK_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
 }
 
-
 def sanitize_filename(name: str) -> str:
     cleaned = re.sub(r'[\\/*?:"<>|]', "", name)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return (cleaned or "koisu_download")[:160]
 
-
 def emit(data: dict):
     print("JSON_MSG:" + json.dumps(data, ensure_ascii=False), flush=True)
-
 
 def get_cookie_opts():
     for cookie_path in [Path("cookies.txt"), Path("downloads/cookies.txt")]:
         if cookie_path.exists() and cookie_path.stat().st_size > 0:
             return {"cookiefile": str(cookie_path.resolve())}
     return {}
-
 
 def detect_platform(url: str, requested: str | None = None) -> str:
     requested = (requested or "").lower().strip()
@@ -65,7 +61,6 @@ def detect_platform(url: str, requested: str | None = None) -> str:
     if "tiktok.com" in lowered:
         return "tiktok"
     return "youtube"
-
 
 def format_error_message(err_str: str, platform: str = "youtube") -> str:
     if not err_str.strip():
@@ -114,7 +109,6 @@ def format_error_message(err_str: str, platform: str = "youtube") -> str:
 
     return err_str
 
-
 def get_base_ydl_opts(platform: str = "youtube"):
     opts = {
         "quiet": True,
@@ -136,7 +130,6 @@ def get_base_ydl_opts(platform: str = "youtube"):
     opts.update(get_cookie_opts())
     return opts
 
-
 def parse_time(value: str | None):
     if not value:
         return None
@@ -150,7 +143,6 @@ def parse_time(value: str | None):
         return parts[0] * 60 + parts[1]
     return parts[0] * 3600 + parts[1] * 60 + parts[2]
 
-
 def seconds_to_time(seconds: float | int):
     total = max(0, int(seconds))
     hours = total // 3600
@@ -160,7 +152,6 @@ def seconds_to_time(seconds: float | int):
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
     return f"{minutes:02d}:{secs:02d}"
 
-
 def seconds_to_filename_label(seconds: float | int):
     total = max(0, int(seconds))
     hours = total // 3600
@@ -169,7 +160,6 @@ def seconds_to_filename_label(seconds: float | int):
     if hours:
         return f"{hours:02d}h{minutes:02d}m{secs:02d}s"
     return f"{minutes:02d}m{secs:02d}s"
-
 
 def build_cut_args(source: Path, target: Path, mode: str, start, end, copy: bool):
     args = [FFMPEG_EXE, "-y"]
@@ -213,7 +203,6 @@ def build_cut_args(source: Path, target: Path, mode: str, start, end, copy: bool
     args.append(str(target))
     return args
 
-
 def cut_media_file(source: Path, mode: str, start, end):
     if start is None and end is None:
         return source
@@ -250,7 +239,6 @@ def cut_media_file(source: Path, mode: str, start, end):
         pass
 
     return target
-
 
 def get_info(url: str, platform: str = "youtube", browser_cookie: str | None = None):
     platform = detect_platform(url, platform)
@@ -342,7 +330,6 @@ def get_info(url: str, platform: str = "youtube", browser_cookie: str | None = N
 
     emit({"status": "info_success", "data": result})
 
-
 def find_final_file(job_id: str):
     ignored = {".webp", ".jpg", ".jpeg", ".png", ".part", ".temp", ".ytdl"}
     matches = [
@@ -354,7 +341,6 @@ def find_final_file(job_id: str):
         return None
     return sorted(matches, key=lambda item: item.stat().st_mtime, reverse=True)[0]
 
-
 def cleanup_job_files(job_id: str):
     for item in DOWNLOAD_DIR.glob(f"{job_id}_*"):
         if item.is_file():
@@ -362,7 +348,6 @@ def cleanup_job_files(job_id: str):
                 item.unlink()
             except OSError:
                 pass
-
 
 def video_format_selector(quality: str, output_format: str):
     limit = f"[height<={quality}]" if quality and quality != "best" and quality.isdigit() else ""
@@ -385,7 +370,6 @@ def video_format_selector(quality: str, output_format: str):
         )
     return f"bestvideo{limit}+bestaudio/best{limit}/best"
 
-
 def compatible_video_format_selector(quality: str, output_format: str):
     limit = f"[height<={quality}]" if quality and quality != "best" and quality.isdigit() else ""
 
@@ -402,23 +386,18 @@ def compatible_video_format_selector(quality: str, output_format: str):
         f"bestvideo{limit}+bestaudio/best{limit}/18/best"
     )
 
-
 def tiktok_video_format_selector(quality: str, no_watermark: bool = True):
     limit = f"[height<={quality}]" if quality and quality != "best" and quality.isdigit() else ""
 
-    # TikTok extractor ranks direct play formats above download_addr watermarked
-    # formats, so plain best selection keeps the no-watermark path reliable.
     if no_watermark:
         return f"bestvideo*{limit}+bestaudio/best{limit}/best"
     return f"bestvideo*{limit}+bestaudio/best{limit}/best"
-
 
 def without_cookies(opts: dict):
     retry_opts = dict(opts)
     retry_opts.pop("cookiefile", None)
     retry_opts.pop("cookiesfrombrowser", None)
     return retry_opts
-
 
 def download_media(
     url: str,
@@ -624,7 +603,6 @@ def download_media(
     except Exception as e:
         emit({"status": "error", "error": format_error_message(str(e), active_platform)})
         sys.exit(1)
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
