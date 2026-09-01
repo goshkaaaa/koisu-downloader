@@ -17,6 +17,25 @@ import {
   VideoInfo,
 } from "@/types";
 
+const readApiJson = async (res: Response) => {
+  const text = await res.text();
+
+  if (!text.trim()) {
+    throw new Error("Сервер вернул пустой ответ. Перезапустите KOISU через run.bat.");
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.trimStart().startsWith("<")) {
+      throw new Error(
+        "Сервер вернул страницу вместо API-ответа. Откройте http://localhost:3000 и перезапустите KOISU через run.bat.",
+      );
+    }
+    throw new Error("Сервер вернул нечитаемый ответ. Перезапустите KOISU.");
+  }
+};
+
 export default function HomePage() {
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
@@ -100,7 +119,7 @@ export default function HomePage() {
         body: JSON.stringify({ url, platform: activePlatform }),
       });
 
-      const data = await res.json();
+      const data = await readApiJson(res);
 
       if (!res.ok || !data.success) {
         const errMsg =
@@ -140,7 +159,7 @@ export default function HomePage() {
         body: JSON.stringify(options),
       });
 
-      const data = await res.json();
+      const data = await readApiJson(res);
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Ошибка запуска скачивания");
@@ -164,7 +183,7 @@ export default function HomePage() {
           const pollRes = await fetch(`/api/progress/${jobId}`);
           if (!pollRes.ok) return;
 
-          const pollData = await pollRes.json();
+          const pollData = await readApiJson(pollRes);
           if (pollData.success && pollData.data) {
             const current: DownloadProgress = pollData.data;
             setDownloadProgress(current);

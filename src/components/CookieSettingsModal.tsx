@@ -24,6 +24,23 @@ const BROWSER_OPTIONS = [
   { id: "brave", label: "Brave" },
 ];
 
+const readApiJson = async (res: Response) => {
+  const text = await res.text();
+
+  if (!text.trim()) {
+    throw new Error("Сервер вернул пустой ответ.");
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.trimStart().startsWith("<")) {
+      throw new Error("Сервер вернул страницу вместо API-ответа.");
+    }
+    throw new Error("Сервер вернул нечитаемый ответ.");
+  }
+};
+
 export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -45,7 +62,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
   const checkStatus = async () => {
     try {
       const res = await fetch("/api/cookies");
-      const data = await res.json();
+      const data = await readApiJson(res);
       setHasCookies(Boolean(data.hasCookies || data.source === "browser"));
       setCookieSize(data.hasCookies ? data.size : null);
       setCookieSource(data.source || "file");
@@ -79,7 +96,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content.trim() }),
       });
-      const data = await res.json();
+      const data = await readApiJson(res);
 
       if (data.success) {
         setStatusMsg({
@@ -112,7 +129,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: "browser", browser }),
       });
-      const data = await res.json();
+      const data = await readApiJson(res);
 
       if (data.success) {
         setCookieSource("browser");
