@@ -46,7 +46,14 @@ def sanitize_filename(name: str) -> str:
 def emit(data: dict):
     print("JSON_MSG:" + json.dumps(data, ensure_ascii=False), flush=True)
 
-def get_cookie_opts():
+def get_cookie_opts(cookie_source: str = "file"):
+    if cookie_source == "none":
+        return {}
+
+    if cookie_source.startswith("browser:"):
+        browser = cookie_source.split(":", 1)[1].strip() or "chrome"
+        return {"cookiesfrombrowser": (browser, None, None, None)}
+
     for cookie_path in [Path("cookies.txt"), Path("downloads/cookies.txt")]:
         if cookie_path.exists() and cookie_path.stat().st_size > 0:
             return {"cookiefile": str(cookie_path.resolve())}
@@ -89,6 +96,8 @@ def format_error_message(err_str: str, platform: str = "youtube") -> str:
         return f"Видео недоступно или удалено с {service}."
     if "requested format is not available" in lowered:
         return "Выбранный формат или качество недоступны для этого ролика. Попробуйте другое качество."
+    if is_cookie_error(err_str):
+        return "Не удалось прочитать cookies из браузера. Выберите другой браузер или используйте публичный ролик."
     if platform == "tiktok" and ("requiring login" in lowered or "login" in lowered):
         return (
             "TikTok требует вход для этого ролика. Попробуйте публичное видео "
@@ -109,7 +118,20 @@ def format_error_message(err_str: str, platform: str = "youtube") -> str:
 
     return err_str
 
-def get_base_ydl_opts(platform: str = "youtube"):
+
+def is_cookie_error(err_str: str) -> bool:
+    lowered = err_str.lower()
+    return (
+        "cookie" in lowered
+        or "cookies" in lowered
+        or "browser" in lowered
+        or "chrome" in lowered
+        or "firefox" in lowered
+        or "edge" in lowered
+    )
+
+
+def get_base_ydl_opts(platform: str = "youtube", cookie_source: str = "file"):
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -127,7 +149,7 @@ def get_base_ydl_opts(platform: str = "youtube"):
                 "concurrent_fragment_downloads": 1,
             }
         )
-    opts.update(get_cookie_opts())
+    opts.update(get_cookie_opts(cookie_source))
     return opts
 
 def parse_time(value: str | None):
@@ -240,9 +262,14 @@ def cut_media_file(source: Path, mode: str, start, end):
 
     return target
 
-def get_info(url: str, platform: str = "youtube", browser_cookie: str | None = None):
+def get_info(
+    url: str,
+    platform: str = "youtube",
+    cookie_source: str = "file",
+    browser_cookie: str | None = None,
+):
     platform = detect_platform(url, platform)
-    ydl_opts = get_base_ydl_opts(platform)
+    ydl_opts = get_base_ydl_opts(platform, cookie_source)
     ydl_opts["extract_flat"] = False
 
     if browser_cookie:
@@ -254,7 +281,18 @@ def get_info(url: str, platform: str = "youtube", browser_cookie: str | None = N
             info = ydl.extract_info(url, download=False)
     except Exception as e:
         err_msg = str(e)
-        if platform == "youtube":
+        fallback_err_msg = ""
+        if cookie_source.startswith("browser:"):
+            try:
+                alt_opts = get_base_ydl_opts(platform, "none")
+                alt_opts["extract_flat"] = False
+                with yt_dlp.YoutubeDL(alt_opts) as alt_ydl:
+                    info = alt_ydl.extract_info(url, download=False)
+            except Exception as fallback_error:
+                fallback_err_msg = str(fallback_error)
+                pass
+
+        if not info and platform == "youtube":
             fallback_clients = [
                 ["android", "web"],
                 ["web_embedded", "ios"],
@@ -272,7 +310,7 @@ def get_info(url: str, platform: str = "youtube", browser_cookie: str | None = N
                     continue
 
         if not info:
-            emit({"error": format_error_message(err_msg, platform)})
+            emit({"error": format_error_message(fallback_err_msg or err_msg, platform)})
             sys.exit(1)
 
     if not info:
@@ -409,6 +447,7 @@ def download_media(
     embed_thumbnail: bool = True,
     platform: str = "youtube",
     no_watermark: bool = True,
+    cookie_source: str = "file",
     browser_cookie: str | None = None,
 ):
     active_platform = detect_platform(url, platform)
@@ -477,7 +516,7 @@ def download_media(
                 }
             )
 
-    ydl_opts = get_base_ydl_opts(active_platform)
+    ydl_opts = get_base_ydl_opts(active_platform, cookie_source)
     ydl_opts.update(
         {
             "outtmpl": out_template,
@@ -542,34 +581,54 @@ def download_media(
         try:
             info = run_download(ydl_opts)
         except Exception as first_error:
-            if "403" not in str(first_error) and "Forbidden" not in str(first_error):
+            first_error_text = str(first_error)
+            if cookie_source.startswith("browser:"):
+                cleanup_job_files(job_id)
+                emit(
+                    {
+                        "status": "starting",
+                        "percent": 0.0,
+                        "message": "Cookies браузера не прочитались. Пробую без cookies...",
+                    }
+                )
+                try:
+                    info = run_download(without_cookies(ydl_opts))
+                    first_error_text = ""
+                except Exception as retry_error:
+                    first_error = retry_error
+                    first_error_text = str(retry_error)
+
+            if not first_error_text:
+                pass
+            elif "403" not in first_error_text and "Forbidden" not in first_error_text:
                 raise
 
-            cleanup_job_files(job_id)
-            emit(
-                {
-                    "status": "starting",
-                    "percent": 0.0,
-                    "message": (
-                        "TikTok отклонил поток. Пробую запасной вариант..."
-                        if active_platform == "tiktok"
-                        else "YouTube отклонил поток. Пробую совместимый вариант..."
-                    ),
-                }
-            )
-
-            retry_opts = without_cookies(ydl_opts)
-            if mode == "audio":
-                retry_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
-            elif active_platform == "tiktok":
-                retry_opts["format"] = "bestvideo*+bestaudio/best"
-            else:
-                retry_opts["format"] = compatible_video_format_selector(
-                    quality,
-                    video_format if "video_format" in locals() else "mp4",
+            if first_error_text:
+                cleanup_job_files(job_id)
+                emit(
+                    {
+                        "status": "starting",
+                        "percent": 0.0,
+                        "message": (
+                            "TikTok отклонил поток. Пробую запасной вариант..."
+                            if active_platform == "tiktok"
+                            else "YouTube отклонил поток. Пробую совместимый вариант..."
+                        ),
+                    }
                 )
 
-            info = run_download(retry_opts)
+                retry_opts = without_cookies(ydl_opts)
+                if mode == "audio":
+                    retry_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+                elif active_platform == "tiktok":
+                    retry_opts["format"] = "bestvideo*+bestaudio/best"
+                else:
+                    retry_opts["format"] = compatible_video_format_selector(
+                        quality,
+                        video_format if "video_format" in locals() else "mp4",
+                    )
+
+                info = run_download(retry_opts)
 
         final_file = find_final_file(job_id)
         if not final_file:
@@ -607,7 +666,7 @@ def download_media(
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(
-            "Usage: engine.py info <url> [platform] OR engine.py download <url> <mode> <quality> <format> [trim_start] [trim_end] [embed_thumbnail] [platform] [no_watermark]"
+            "Usage: engine.py info <url> [platform] [cookie_source] OR engine.py download <url> <mode> <quality> <format> [trim_start] [trim_end] [embed_thumbnail] [platform] [no_watermark] [cookie_source]"
         )
         sys.exit(1)
 
@@ -616,7 +675,8 @@ if __name__ == "__main__":
 
     if command == "info":
         platform_arg = sys.argv[3] if len(sys.argv) > 3 else "youtube"
-        get_info(url_arg, platform_arg)
+        cookie_source_arg = sys.argv[4] if len(sys.argv) > 4 else "file"
+        get_info(url_arg, platform_arg, cookie_source_arg)
     elif command == "download":
         mode_arg = sys.argv[3] if len(sys.argv) > 3 else "video"
         quality_arg = sys.argv[4] if len(sys.argv) > 4 else "best"
@@ -626,6 +686,7 @@ if __name__ == "__main__":
         embed_thumbnail_arg = sys.argv[8].lower() != "false" if len(sys.argv) > 8 else True
         platform_arg = sys.argv[9] if len(sys.argv) > 9 else "youtube"
         no_watermark_arg = sys.argv[10].lower() != "false" if len(sys.argv) > 10 else True
+        cookie_source_arg = sys.argv[11] if len(sys.argv) > 11 else "file"
         download_media(
             url_arg,
             mode_arg,
@@ -636,4 +697,5 @@ if __name__ == "__main__":
             embed_thumbnail_arg,
             platform_arg,
             no_watermark_arg,
+            cookie_source_arg,
         )

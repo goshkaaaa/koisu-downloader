@@ -17,6 +17,13 @@ interface CookieSettingsModalProps {
   onSaved?: () => void;
 }
 
+const BROWSER_OPTIONS = [
+  { id: "chrome", label: "Chrome" },
+  { id: "edge", label: "Edge" },
+  { id: "firefox", label: "Firefox" },
+  { id: "brave", label: "Brave" },
+];
+
 export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -24,6 +31,10 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
 }) => {
   const [hasCookies, setHasCookies] = useState(false);
   const [cookieSize, setCookieSize] = useState<number | null>(null);
+  const [cookieSource, setCookieSource] = useState<"file" | "browser" | "none">(
+    "file",
+  );
+  const [browserName, setBrowserName] = useState("chrome");
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -35,8 +46,10 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
     try {
       const res = await fetch("/api/cookies");
       const data = await res.json();
-      setHasCookies(Boolean(data.hasCookies));
+      setHasCookies(Boolean(data.hasCookies || data.source === "browser"));
       setCookieSize(data.hasCookies ? data.size : null);
+      setCookieSource(data.source || "file");
+      setBrowserName(data.browser || "chrome");
     } catch (e) {
       console.warn("Failed to check cookies status", e);
     }
@@ -71,7 +84,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
       if (data.success) {
         setStatusMsg({
           type: "success",
-          text: "Cookies сохранены. Видео 18+ теперь можно пробовать снова.",
+          text: "Cookies сохранены. Видео теперь можно пробовать снова.",
         });
         setContent("");
         checkStatus();
@@ -89,6 +102,40 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
     }
   };
 
+  const handleUseBrowser = async (browser: string) => {
+    setIsLoading(true);
+    setStatusMsg(null);
+
+    try {
+      const res = await fetch("/api/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "browser", browser }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setCookieSource("browser");
+        setBrowserName(browser);
+        setHasCookies(true);
+        setStatusMsg({
+          type: "success",
+          text: `KOISU будет брать cookies из ${data.browser}.`,
+        });
+        onSaved?.();
+      } else {
+        setStatusMsg({
+          type: "error",
+          text: data.error || "Не удалось включить cookies из браузера",
+        });
+      }
+    } catch (err: any) {
+      setStatusMsg({ type: "error", text: err.message || "Сетевая ошибка" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
     setIsLoading(true);
     try {
@@ -96,6 +143,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
       setStatusMsg({ type: "success", text: "Cookies удалены" });
       setHasCookies(false);
       setCookieSize(null);
+      setCookieSource("none");
     } catch (err: any) {
       setStatusMsg({ type: "error", text: err.message || "Ошибка удаления" });
     } finally {
@@ -157,6 +205,44 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
             </div>
           )}
 
+          <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/[0.07] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-white">
+                  Взять cookies из браузера
+                </div>
+                <div className="mt-1 text-xs text-[var(--text-muted)]">
+                  Войдите в YouTube или TikTok в браузере и выберите его здесь.
+                </div>
+              </div>
+              {cookieSource === "browser" && (
+                <span className="rounded-full border border-cyan-300/25 bg-cyan-300/[0.1] px-2 py-1 text-[10px] font-bold uppercase text-cyan-100">
+                  {browserName}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {BROWSER_OPTIONS.map((browser) => {
+                const active =
+                  cookieSource === "browser" && browserName === browser.id;
+                return (
+                  <button
+                    key={browser.id}
+                    type="button"
+                    onClick={() => handleUseBrowser(browser.id)}
+                    disabled={isLoading}
+                    className={`min-h-11 rounded-lg px-3 py-2 text-xs font-bold ${
+                      active ? "control control-active" : "control"
+                    }`}
+                  >
+                    {browser.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs leading-relaxed text-[var(--text-muted)]">
             <div className="mb-2 flex items-center gap-1.5 font-semibold text-white">
               <Info className="h-4 w-4 text-[var(--accent)]" />
@@ -164,15 +250,15 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
             </div>
             <p>
               YouTube и TikTok иногда требуют авторизацию для видео 18+,
-              приватного доступа или проверки входа. Вставьте сюда содержимое
-              `cookies.txt` от нужного сайта, чтобы yt-dlp мог скачать ролик от
-              вашего имени.
+              приватного доступа или проверки входа. Лучше выбрать браузер
+              сверху; если это не сработало, можно вставить `cookies.txt`
+              вручную.
             </p>
           </div>
 
           <div className="space-y-2">
             <label className="block text-xs font-semibold uppercase text-[var(--text-muted)]">
-              Как получить cookies
+              Запасной вариант
             </label>
             <div className="grid grid-cols-1 gap-2.5 text-xs text-[var(--text-muted)] md:grid-cols-3">
               {[

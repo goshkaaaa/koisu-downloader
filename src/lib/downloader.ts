@@ -26,6 +26,27 @@ function readPayloadNumber(payload: any, camel: string, snake: string) {
   return typeof payload[camel] === "number" ? payload[camel] : payload[snake];
 }
 
+function getCookieSourceArg(): string {
+  const settingsPath = path.resolve(
+    process.cwd(),
+    "downloads",
+    "cookie-settings.json",
+  );
+
+  try {
+    if (!fs.existsSync(settingsPath)) return "file";
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    if (settings.source === "browser" && settings.browser) {
+      return `browser:${settings.browser}`;
+    }
+    if (settings.source === "none") return "none";
+  } catch (err) {
+    console.warn("Failed to read cookie settings", err);
+  }
+
+  return "file";
+}
+
 export async function fetchVideoInfo(
   url: string,
   platform: MediaPlatform = "youtube",
@@ -34,10 +55,14 @@ export async function fetchVideoInfo(
     const pythonCmd = getPythonCommand();
     const scriptPath = path.resolve(process.cwd(), "engine.py");
 
-    const proc = spawn(pythonCmd, [scriptPath, "info", url, platform], {
+    const proc = spawn(
+      pythonCmd,
+      [scriptPath, "info", url, platform, getCookieSourceArg()],
+      {
       cwd: process.cwd(),
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-    });
+      },
+    );
 
     let stdoutData = "";
     let stderrData = "";
@@ -120,6 +145,7 @@ export function startDownloadJob(options: DownloadOptions): { jobId: string } {
     options.embedThumbnail === false ? "false" : "true",
     options.platform || "youtube",
     options.noWatermark === false ? "false" : "true",
+    getCookieSourceArg(),
   ];
 
   const proc = spawn(pythonCmd, args, {
