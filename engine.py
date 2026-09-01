@@ -96,6 +96,8 @@ def format_error_message(err_str: str, platform: str = "youtube") -> str:
         return f"Видео недоступно или удалено с {service}."
     if "requested format is not available" in lowered:
         return "Выбранный формат или качество недоступны для этого ролика. Попробуйте другое качество."
+    if is_youtube_bot_check(err_str):
+        return "YouTube запросил проверку браузера даже для публичного ролика. Откройте YouTube в браузере на этом ПК, затем в настройках KOISU выберите этот браузер для cookies и попробуйте снова."
     if is_cookie_error(err_str):
         return "Не удалось прочитать cookies из браузера. Выберите другой браузер или используйте публичный ролик."
     if platform == "tiktok" and ("requiring login" in lowered or "login" in lowered):
@@ -121,6 +123,8 @@ def format_error_message(err_str: str, platform: str = "youtube") -> str:
 
 def is_cookie_error(err_str: str) -> bool:
     lowered = err_str.lower()
+    if is_youtube_bot_check(err_str):
+        return False
     return (
         "cookie" in lowered
         or "cookies" in lowered
@@ -128,6 +132,18 @@ def is_cookie_error(err_str: str) -> bool:
         or "chrome" in lowered
         or "firefox" in lowered
         or "edge" in lowered
+    )
+
+
+def is_youtube_bot_check(err_str: str) -> bool:
+    lowered = err_str.lower()
+    return (
+        "sign in to confirm" in lowered
+        or "confirm you're not a bot" in lowered
+        or "confirm you’re not a bot" in lowered
+        or "not a bot" in lowered
+        or "use --cookies-from-browser" in lowered
+        or "use --cookies" in lowered
     )
 
 
