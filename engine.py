@@ -28,6 +28,17 @@ os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+YOUTUBE_CLIENT_FALLBACKS = [
+    ["ios"],
+    ["android"],
+    ["web_embedded"],
+    ["tv"],
+    ["mweb"],
+    ["android", "ios"],
+    ["web_embedded", "mweb"],
+    ["tv", "web"],
+]
+
 TIKTOK_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
@@ -154,6 +165,14 @@ def has_cookie_source(cookie_source: str) -> bool:
 def add_cookie_source(opts: dict, cookie_source: str) -> dict:
     next_opts = dict(opts)
     next_opts.update(get_cookie_opts(cookie_source))
+    return next_opts
+
+
+def youtube_client_opts(opts: dict, client_group: list[str]) -> dict:
+    next_opts = dict(opts)
+    next_opts.pop("cookiefile", None)
+    next_opts.pop("cookiesfrombrowser", None)
+    next_opts["extractor_args"] = {"youtube": {"player_client": client_group}}
     return next_opts
 
 
@@ -308,7 +327,18 @@ def get_info(
     except Exception as e:
         err_msg = str(e)
         fallback_err_msg = ""
-        if has_cookie_source(cookie_source):
+        if not info and platform == "youtube":
+            for client_group in YOUTUBE_CLIENT_FALLBACKS:
+                try:
+                    alt_opts = youtube_client_opts(ydl_opts, client_group)
+                    with yt_dlp.YoutubeDL(alt_opts) as alt_ydl:
+                        info = alt_ydl.extract_info(url, download=False)
+                        if info:
+                            break
+                except Exception:
+                    continue
+
+        if not info and has_cookie_source(cookie_source):
             try:
                 alt_opts = add_cookie_source(ydl_opts, cookie_source)
                 alt_opts["extract_flat"] = False
@@ -317,23 +347,6 @@ def get_info(
             except Exception as fallback_error:
                 candidate_error = str(fallback_error)
                 fallback_err_msg = err_msg if is_cookie_error(candidate_error) else candidate_error
-
-        if not info and platform == "youtube":
-            fallback_clients = [
-                ["android", "web"],
-                ["web_embedded", "ios"],
-                ["tv", "web"],
-            ]
-            for client_group in fallback_clients:
-                try:
-                    alt_opts = dict(ydl_opts)
-                    alt_opts["extractor_args"] = {"youtube": {"player_client": client_group}}
-                    with yt_dlp.YoutubeDL(alt_opts) as alt_ydl:
-                        info = alt_ydl.extract_info(url, download=False)
-                        if info:
-                            break
-                except Exception:
-                    continue
 
         if not info:
             emit({"error": format_error_message(fallback_err_msg or err_msg, platform)})
@@ -608,7 +621,37 @@ def download_media(
             info = run_download(ydl_opts)
         except Exception as first_error:
             first_error_text = str(first_error)
-            if has_cookie_source(cookie_source):
+            if active_platform == "youtube":
+                cleanup_job_files(job_id)
+                emit(
+                    {
+                        "status": "starting",
+                        "percent": 0.0,
+                        "message": "YouTube отклонил поток. Пробую другие публичные варианты...",
+                    }
+                )
+                retry_opts = without_cookies(ydl_opts)
+                if mode == "audio":
+                    retry_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+                else:
+                    retry_opts["format"] = compatible_video_format_selector(
+                        quality,
+                        video_format if "video_format" in locals() else "mp4",
+                    )
+                last_youtube_error = first_error_text
+                for client_group in YOUTUBE_CLIENT_FALLBACKS:
+                    cleanup_job_files(job_id)
+                    try:
+                        info = run_download(youtube_client_opts(retry_opts, client_group))
+                        first_error_text = ""
+                        last_youtube_error = ""
+                        break
+                    except Exception as client_error:
+                        last_youtube_error = str(client_error)
+                if last_youtube_error:
+                    first_error_text = last_youtube_error
+
+            if first_error_text and has_cookie_source(cookie_source):
                 cleanup_job_files(job_id)
                 emit(
                     {
@@ -627,7 +670,9 @@ def download_media(
 
             if not first_error_text:
                 pass
-            elif "403" not in first_error_text and "Forbidden" not in first_error_text:
+            elif active_platform == "youtube":
+                raise RuntimeError(first_error_text)
+            elif active_platform != "youtube" and "403" not in first_error_text and "Forbidden" not in first_error_text:
                 raise RuntimeError(first_error_text)
 
             if first_error_text:
