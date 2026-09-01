@@ -49,7 +49,7 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
   const [hasCookies, setHasCookies] = useState(false);
   const [cookieSize, setCookieSize] = useState<number | null>(null);
   const [cookieSource, setCookieSource] = useState<"file" | "browser" | "none">(
-    "file",
+    "none",
   );
   const [browserName, setBrowserName] = useState("chrome");
   const [content, setContent] = useState("");
@@ -63,9 +63,11 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
     try {
       const res = await fetch("/api/cookies");
       const data = await readApiJson(res);
-      setHasCookies(Boolean(data.hasCookies || data.source === "browser"));
+      setHasCookies(
+        Boolean((data.source === "file" && data.hasCookies) || data.source === "browser"),
+      );
       setCookieSize(data.hasCookies ? data.size : null);
-      setCookieSource(data.source || "file");
+      setCookieSource(data.source || "none");
       setBrowserName(data.browser || "chrome");
     } catch (e) {
       console.warn("Failed to check cookies status", e);
@@ -110,6 +112,39 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
         setStatusMsg({
           type: "error",
           text: data.error || "Ошибка при сохранении",
+        });
+      }
+    } catch (err: any) {
+      setStatusMsg({ type: "error", text: err.message || "Сетевая ошибка" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUsePublic = async () => {
+    setIsLoading(true);
+    setStatusMsg(null);
+
+    try {
+      const res = await fetch("/api/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "none" }),
+      });
+      const data = await readApiJson(res);
+
+      if (data.success) {
+        setCookieSource("none");
+        setHasCookies(false);
+        setStatusMsg({
+          type: "success",
+          text: "Публичные ролики будут скачиваться без cookies.",
+        });
+        onSaved?.();
+      } else {
+        setStatusMsg({
+          type: "error",
+          text: data.error || "Не удалось отключить cookies",
         });
       }
     } catch (err: any) {
@@ -226,10 +261,10 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-white">
-                  Взять cookies из браузера
+                  Режим cookies
                 </div>
                 <div className="mt-1 text-xs text-[var(--text-muted)]">
-                  Войдите в YouTube или TikTok в браузере и выберите его здесь.
+                  Для публичных роликов лучше оставить скачивание без cookies.
                 </div>
               </div>
               {cookieSource === "browser" && (
@@ -238,6 +273,17 @@ export const CookieSettingsModal: React.FC<CookieSettingsModalProps> = ({
                 </span>
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={handleUsePublic}
+              disabled={isLoading}
+              className={`mb-2 min-h-11 w-full rounded-lg px-3 py-2 text-xs font-bold ${
+                cookieSource === "none" ? "control control-active" : "control"
+              }`}
+            >
+              Скачивать публичные без cookies
+            </button>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {BROWSER_OPTIONS.map((browser) => {

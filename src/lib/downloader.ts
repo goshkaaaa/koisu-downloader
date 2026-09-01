@@ -34,17 +34,18 @@ function getCookieSourceArg(): string {
   );
 
   try {
-    if (!fs.existsSync(settingsPath)) return "file";
+    if (!fs.existsSync(settingsPath)) return "none";
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     if (settings.source === "browser" && settings.browser) {
       return `browser:${settings.browser}`;
     }
+    if (settings.source === "file") return "file";
     if (settings.source === "none") return "none";
   } catch (err) {
     console.warn("Failed to read cookie settings", err);
   }
 
-  return "file";
+  return "none";
 }
 
 export async function fetchVideoInfo(

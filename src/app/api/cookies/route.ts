@@ -13,11 +13,11 @@ const SUPPORTED_BROWSERS = new Set(["chrome", "edge", "firefox", "brave", "opera
 function readCookieSettings() {
   try {
     if (!fs.existsSync(COOKIE_SETTINGS_PATH)) {
-      return { source: "file", browser: "chrome" };
+      return { source: "none", browser: "chrome" };
     }
     return JSON.parse(fs.readFileSync(COOKIE_SETTINGS_PATH, "utf-8"));
   } catch {
-    return { source: "file", browser: "chrome" };
+    return { source: "none", browser: "chrome" };
   }
 }
 
@@ -61,6 +61,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { content, source, browser } = body;
+
+    if (source === "none") {
+      writeCookieSettings({ source: "none", browser: "chrome" });
+      return NextResponse.json({
+        success: true,
+        source: "none",
+        browser: "chrome",
+        message: "Публичные ролики будут скачиваться без cookies.",
+      });
+    }
 
     if (source === "browser") {
       const cleanBrowser = String(browser || "chrome").toLowerCase();
