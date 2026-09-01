@@ -131,6 +131,16 @@ def is_cookie_error(err_str: str) -> bool:
     )
 
 
+def has_cookie_source(cookie_source: str) -> bool:
+    return cookie_source not in {"", "none"}
+
+
+def add_cookie_source(opts: dict, cookie_source: str) -> dict:
+    next_opts = dict(opts)
+    next_opts.update(get_cookie_opts(cookie_source))
+    return next_opts
+
+
 def get_base_ydl_opts(platform: str = "youtube", cookie_source: str = "file"):
     opts = {
         "quiet": True,
@@ -269,7 +279,7 @@ def get_info(
     browser_cookie: str | None = None,
 ):
     platform = detect_platform(url, platform)
-    ydl_opts = get_base_ydl_opts(platform, cookie_source)
+    ydl_opts = get_base_ydl_opts(platform, "none")
     ydl_opts["extract_flat"] = False
 
     if browser_cookie:
@@ -282,15 +292,15 @@ def get_info(
     except Exception as e:
         err_msg = str(e)
         fallback_err_msg = ""
-        if cookie_source.startswith("browser:"):
+        if has_cookie_source(cookie_source):
             try:
-                alt_opts = get_base_ydl_opts(platform, "none")
+                alt_opts = add_cookie_source(ydl_opts, cookie_source)
                 alt_opts["extract_flat"] = False
                 with yt_dlp.YoutubeDL(alt_opts) as alt_ydl:
                     info = alt_ydl.extract_info(url, download=False)
             except Exception as fallback_error:
-                fallback_err_msg = str(fallback_error)
-                pass
+                candidate_error = str(fallback_error)
+                fallback_err_msg = err_msg if is_cookie_error(candidate_error) else candidate_error
 
         if not info and platform == "youtube":
             fallback_clients = [
@@ -516,7 +526,7 @@ def download_media(
                 }
             )
 
-    ydl_opts = get_base_ydl_opts(active_platform, cookie_source)
+    ydl_opts = get_base_ydl_opts(active_platform, "none")
     ydl_opts.update(
         {
             "outtmpl": out_template,
@@ -582,26 +592,27 @@ def download_media(
             info = run_download(ydl_opts)
         except Exception as first_error:
             first_error_text = str(first_error)
-            if cookie_source.startswith("browser:"):
+            if has_cookie_source(cookie_source):
                 cleanup_job_files(job_id)
                 emit(
                     {
                         "status": "starting",
                         "percent": 0.0,
-                        "message": "Cookies браузера не прочитались. Пробую без cookies...",
+                        "message": "Пробую с cookies из настроек...",
                     }
                 )
                 try:
-                    info = run_download(without_cookies(ydl_opts))
+                    info = run_download(add_cookie_source(ydl_opts, cookie_source))
                     first_error_text = ""
                 except Exception as retry_error:
-                    first_error = retry_error
-                    first_error_text = str(retry_error)
+                    retry_error_text = str(retry_error)
+                    if retry_error_text and not is_cookie_error(retry_error_text):
+                        first_error_text = retry_error_text
 
             if not first_error_text:
                 pass
             elif "403" not in first_error_text and "Forbidden" not in first_error_text:
-                raise
+                raise RuntimeError(first_error_text)
 
             if first_error_text:
                 cleanup_job_files(job_id)
